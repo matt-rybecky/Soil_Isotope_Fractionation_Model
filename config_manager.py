@@ -457,34 +457,6 @@ def load_config(config_path: Union[str, Path, Dict[str, Any], None] = None) -> M
     return ModelConfiguration.from_file(config_path)
 
 
-# Example configurations for common scenarios
-def get_arid_climate_config() -> ModelConfiguration:
-    """Configuration for arid climate conditions."""
-    config = create_default_config()
-    config.atmospheric.relative_humidity = 30.0
-    config.atmospheric.mean_air_temperature = 25.0
-    config.atmospheric.d18O_rain = -5.0
-    config.soil.water_content_profile.constant_value = 0.002
-    return config
-
-
-def get_humid_climate_config() -> ModelConfiguration:
-    """Configuration for humid climate conditions."""
-    config = create_default_config()
-    config.atmospheric.relative_humidity = 85.0
-    config.atmospheric.mean_air_temperature = 15.0
-    config.atmospheric.d18O_rain = -15.0
-    config.soil.water_content_profile.constant_value = 0.01
-    return config
-
-
-def get_high_resolution_config() -> ModelConfiguration:
-    """Configuration for high spatial resolution simulation."""
-    config = create_default_config()
-    config.numerical.depth_step = 1.0  # cm
-    config.soil.depth = 100.0  # cm (smaller domain for speed)
-    config.numerical.run_days = 30.0  # shorter run
-    return config
 
 
 # ================================

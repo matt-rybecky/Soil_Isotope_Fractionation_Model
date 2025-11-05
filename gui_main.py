@@ -23,7 +23,7 @@ warnings.filterwarnings('ignore')
 from soil_model import SoilEvaporationModel
 from gui_utils import DataPathManager, GUIUtils, StandardStyles
 from plotting_utils import SoilEvaporationPlotter, PlotCanvas, PlotStyle
-from config_manager import ConfigurationManager, GUIConfigManager, ModelConfiguration, load_config
+from config_manager import ConfigurationManager, GUIConfigManager, ModelConfiguration, load_config, ERA5Forcing
 from output_data_manager import OutputDataManager
 
 
@@ -183,10 +183,6 @@ class SoilEvaporationApp:
         self.runs_listbox.selection_clear(0, tk.END)
         self.on_runs_selected()
         
-    def on_run_selected(self, event=None):
-        """Handle selection of a run from dropdown - DEPRECATED, keeping for compatibility."""
-        # This method is kept for any remaining references, but functionality moved to on_runs_selected
-        pass
     
     def create_widgets(self):
         """Create main GUI components."""
@@ -521,7 +517,6 @@ class SoilEvaporationApp:
     
     def _browse_profile_file(self):
         """Open file browser for water content profile CSV."""
-        from tkinter import filedialog
         
         file_path = filedialog.askopenfilename(
             title="Select Water Content Profile CSV",
@@ -647,7 +642,6 @@ class SoilEvaporationApp:
     
     def _browse_temp_profile_file(self):
         """Open file browser for temperature profile CSV."""
-        from tkinter import filedialog
         
         file_path = filedialog.askopenfilename(
             title="Select Temperature Profile CSV",
@@ -840,7 +834,6 @@ class SoilEvaporationApp:
     
     def _browse_overlay_data(self):
         """Browse for overlay data file."""
-        from tkinter import filedialog
         import pandas as pd
         
         file_path = filedialog.askopenfilename(
@@ -932,7 +925,6 @@ class SoilEvaporationApp:
     def update_era5_display(self):
         """Update ERA5 data summary display."""
         try:
-            from config_manager import ERA5Forcing
             
             selected_file = self.era5_file_var.get()
             if not selected_file or selected_file == "No ERA5 files found":
@@ -1291,9 +1283,10 @@ def main():
     print("="*50)
     
     try:
-        from soil_model import SoilEvaporationModel
+        # Test that imports are working (already imported at module level)
+        SoilEvaporationModel
         print("✓ Model modules loaded")
-    except ImportError as e:
+    except NameError as e:
         print(f"❌ Failed to import modules: {e}")
         return
     

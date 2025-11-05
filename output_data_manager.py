@@ -50,9 +50,7 @@ class OutputDataManager:
         self.output_directory = Path(output_directory)
         self.output_directory.mkdir(exist_ok=True)
         
-        # File naming patterns - compressed format for optimal performance
-        self.config_pattern = "soil_evap_config_*.json"
-        self.data_pattern = "soil_evap_data_*.npz" 
+        # File naming patterns - compressed format for optimal performance 
         self.complete_pattern = "soil_evap_complete_*.npz"
     
     def _make_json_serializable(self, obj: Any) -> Any:
