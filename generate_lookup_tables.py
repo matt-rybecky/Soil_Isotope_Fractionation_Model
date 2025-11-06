@@ -28,9 +28,10 @@ def generate_lookup_tables():
     es_lookup = 6.112 * np.exp(17.67 * temp_range / (temp_range + 243.5)) * 100
     
     # Fractionation factors (Horita & Wesolowski 1994)
+    # CORRECTED: The formula gives vapor/liquid, but model needs liquid/vapor
     T_K = temp_range + 273.15
     alpha_arg = (-7.685 + 6713.0/T_K - 1.666e6/(T_K**2)) / 1000.0
-    alpha_1816_lookup = np.exp(alpha_arg)
+    alpha_1816_lookup = 1.0 / np.exp(alpha_arg)  # Invert to get liquid/vapor fractionation
     
     # Mass-dependent relationship (theta_eq = 0.529)
     alpha_1716_lookup = alpha_1816_lookup**0.529

@@ -877,44 +877,67 @@ class SoilEvaporationPlotter:
         return True
     
     def _plot_overlay_data(self, ax, overlay_data, variable_name, model_depth):
-        """Plot experimental overlay data with color styling."""
+        """Plot experimental overlay data with color styling for multiple datasets."""
         try:
             import pandas as pd
             
-            # Convert to DataFrame if not already
-            if not isinstance(overlay_data, pd.DataFrame):
-                overlay_data = pd.DataFrame(overlay_data)
-            
-            # Map variable names for overlay data
-            overlay_variable_name = variable_name
-            if variable_name == 'delta_prime':  # Model uses 'delta_prime' for Δ'¹⁷O
-                overlay_variable_name = 'D17O'  # Overlay data uses 'D17O'
-            
-            # Check required columns
-            required_cols = ['depth', overlay_variable_name]
-            missing_cols = [col for col in required_cols if col not in overlay_data.columns]
-            if missing_cols:
-                print(f"Warning: Overlay data missing columns: {missing_cols}")
+            # Handle multiple overlay datasets
+            if not overlay_data:
                 return
             
-            # Extract overlay data
-            overlay_depth = overlay_data['depth'].values
-            overlay_values = overlay_data[overlay_variable_name].values
-            
             # Define colors for overlay data (different from black/white model data)
-            overlay_colors = ['red', 'blue', 'green', 'orange', 'purple']
-            color = overlay_colors[0]  # Use first color for single overlay dataset
+            overlay_colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
             
-            # Plot with colored markers only (no connecting lines)
-            ax.scatter(overlay_values, overlay_depth,
-                      color=color,
-                      s=60,  # Larger marker size (s is area, so 60 is quite large)
-                      marker='o',
-                      edgecolors='white',
-                      linewidth=1.5,
-                      label='Experimental Data',
-                      alpha=0.9,
-                      zorder=10)  # Ensure overlay points are on top
+            # If overlay_data is a list of dataset dictionaries
+            if isinstance(overlay_data, list):
+                datasets = overlay_data
+            else:
+                # Legacy support - single dataset as DataFrame
+                datasets = [{'filename': 'Data', 'data': overlay_data}]
+            
+            for i, dataset in enumerate(datasets):
+                # Extract data and filename
+                if isinstance(dataset, dict) and 'data' in dataset:
+                    data = dataset['data']
+                    filename = dataset.get('filename', f'Dataset {i+1}')
+                else:
+                    # Legacy support
+                    data = dataset
+                    filename = f'Dataset {i+1}'
+                
+                # Convert to DataFrame if not already
+                if not isinstance(data, pd.DataFrame):
+                    data = pd.DataFrame(data)
+                
+                # Map variable names for overlay data
+                overlay_variable_name = variable_name
+                if variable_name == 'delta_prime':  # Model uses 'delta_prime' for Δ'¹⁷O
+                    overlay_variable_name = 'D17O'  # Overlay data uses 'D17O'
+                
+                # Check required columns
+                required_cols = ['depth', overlay_variable_name]
+                missing_cols = [col for col in required_cols if col not in data.columns]
+                if missing_cols:
+                    print(f"Warning: Overlay data '{filename}' missing columns: {missing_cols}")
+                    continue
+                
+                # Extract overlay data
+                overlay_depth = data['depth'].values
+                overlay_values = data[overlay_variable_name].values
+                
+                # Use different color for each dataset
+                color = overlay_colors[i % len(overlay_colors)]
+                
+                # Plot with colored markers only (no connecting lines)
+                ax.scatter(overlay_values, overlay_depth,
+                          color=color,
+                          s=60,  # Larger marker size (s is area, so 60 is quite large)
+                          marker='o',
+                          edgecolors='white',
+                          linewidth=1.5,
+                          label=f'{filename}',
+                          alpha=0.9,
+                          zorder=10)  # Ensure overlay points are on top
                    
         except Exception as e:
             print(f"Warning: Could not plot overlay data: {e}")

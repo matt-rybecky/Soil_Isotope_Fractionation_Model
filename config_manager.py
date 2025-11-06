@@ -24,6 +24,9 @@ import pandas as pd
 import warnings
 from contextlib import contextmanager
 
+# Import ERA5 utilities from new module
+from era5_utils import ERA5Forcing, load_era5_forcing_from_config, load_default_era5_forcing
+
 
 # ================================
 # Utility Functions
@@ -94,22 +97,23 @@ GUI_TYPE_MAP = {
 @dataclass
 class AtmosphericParameters:
     """Atmospheric conditions for the model."""
-    relative_humidity: float = 70.0  # %
-    mean_air_temperature: float = 18.0  # degrees C
+    relative_humidity: float = 35.0  # %
+    mean_air_temperature: float = 24.0  # degrees C
     annual_temperature_range: float = 7.0  # degrees C (half range)
-    d18O_rain: float = -10.0  # per mil
-    D_prime_17O_rain: float = 10.0  # per meg
+    d18O_rain: float = -14.0  # per mil
+    D_prime_17O_rain: float = 45.0  # per meg
     
     # Atmospheric vapor isotope composition (independent of rain)
-    d18O_vapor: float = -15.0  # per mil - atmospheric water vapor
+    d18O_vapor: float = -24.0  # per mil - atmospheric water vapor
     D_prime_17O_vapor: float = 10.0   # per meg - atmospheric water vapor (Δ'¹⁷O)
     
     # Additional atmospheric parameters for constant mode
     air_pressure: float = 101325.0  # Pa - atmospheric pressure
     
     # Surface boundary layer parameters
-    wind_speed: float = 2.0  # m/s - wind speed at reference height
+    wind_speed: float = 0.25  # m/s - wind speed at reference height
     surface_roughness: float = 0.1  # cm - surface roughness length
+    
     
     def __post_init__(self):
         """Validate atmospheric parameters."""
@@ -120,6 +124,7 @@ class AtmosphericParameters:
         validate_positive(self.air_pressure, "Air pressure")
         validate_positive(self.wind_speed, "Wind speed")
         validate_positive(self.surface_roughness, "Surface roughness")
+        
 
 
 @dataclass
@@ -169,16 +174,16 @@ class TemperatureProfile:
     profile_type: str = "constant"  # "constant", "linear", "exponential", "from_file"
     
     # Constant profile
-    constant_value: float = 15.0  # °C
+    constant_value: float = 24.0  # °C
     
     # Linear profile  
-    surface_value: float = 20.0    # °C at surface
-    bottom_value: float = 15.0     # °C at bottom
+    surface_value: float = 24.0    # °C at surface
+    bottom_value: float = 20.0     # °C at bottom
     
     # Exponential profile
-    surface_value_exp: float = 25.0  # °C at surface
+    surface_value_exp: float = 24.0  # °C at surface
     decay_length: float = 30.0       # cm - characteristic decay length
-    background_value: float = 15.0   # °C asymptotic value
+    background_value: float = 20.0   # °C asymptotic value
     
     # From file
     profile_file: Optional[str] = None
@@ -203,9 +208,9 @@ class TemperatureProfile:
 @dataclass
 class SoilParameters:
     """Soil physical properties."""
-    depth: float = 150.0  # cm
-    total_porosity: float = 0.5  # dimensionless
-    tortuosity: float = 0.6  # dimensionless
+    depth: float = 100.0  # cm
+    total_porosity: float = 0.4  # dimensionless
+    tortuosity: float = 0.7  # dimensionless
     water_content_threshold: float = 0.00005  # cm³/cm³
     water_content_profile: WaterContentProfile = field(default_factory=WaterContentProfile)
     
@@ -227,7 +232,7 @@ class SoilParameters:
 class NumericalParameters:
     """Numerical model settings."""
     depth_step: float = 2.0  # cm
-    run_days: float = 70.0  # days
+    run_days: float = 20.0  # days
     max_iterations: Optional[int] = None  # auto-calculated if None
     store_interval: Optional[int] = None  # auto-calculated if None
     progress_interval: int = 25000  # iterations (hardcoded, not user-controllable)
@@ -600,8 +605,24 @@ class ConfigurationManager:
             for part in path_parts[:-1]:
                 obj = getattr(obj, part)
             
+            # Get the current attribute to determine expected type
+            attr_name = path_parts[-1]
+            current_value = getattr(obj, attr_name, None)
+            
+            # Convert value to appropriate type if needed
+            if current_value is not None:
+                if isinstance(current_value, float) and isinstance(value, str):
+                    # Convert string to float (handles "70" -> 70.0)
+                    value = float(value)
+                elif isinstance(current_value, int) and isinstance(value, str):
+                    # Convert string to int
+                    value = int(value)
+                elif isinstance(current_value, bool) and isinstance(value, str):
+                    # Convert string to bool
+                    value = value.lower() in ('true', '1', 'yes', 'on')
+            
             # Set the final attribute
-            setattr(obj, path_parts[-1], value)
+            setattr(obj, attr_name, value)
             self.unsaved_changes = True
             return True
         
@@ -721,7 +742,8 @@ class GUIConfigManager:
                 new_value = gui_variable.get()
                 self.config_manager.update_config_parameter(parameter_path, new_value)
             except Exception as e:
-                print(f"Error updating config parameter {parameter_path}: {e}")
+                # Silently ignore validation errors during GUI updates
+                pass
     
     def sync_gui_from_config(self):
         """Synchronize all GUI variables from current configuration."""
@@ -858,279 +880,3 @@ class GUIConfigManager:
             messagebox.showerror("Configuration Errors", error_message, parent=parent)
         else:
             messagebox.showinfo("Configuration Valid", "Configuration is valid!", parent=parent)
-
-
-# ================================
-# ERA5 Utility Functions
-# ================================
-
-def validate_era5_data(data: pd.DataFrame) -> None:
-    """Validate ERA5 data ranges and units."""
-    temp_air = data['temperature_2m']
-    if temp_air.min() < -100 or temp_air.max() > 60:
-        warnings.warn(f"Air temperature range seems unrealistic: {temp_air.min():.1f} to {temp_air.max():.1f} °C")
-    
-    humidity = data['relative_humidity']
-    if humidity.min() < 0 or humidity.max() > 100:
-        warnings.warn(f"Relative humidity outside 0-100% range: {humidity.min():.1f} to {humidity.max():.1f}")
-    
-    pressure = data['surface_pressure']
-    if pressure.min() < 50000 or pressure.max() > 110000:
-        warnings.warn(f"Surface pressure seems unrealistic: {pressure.min():.0f} to {pressure.max():.0f} Pa")
-
-def calculate_era5_derived_variables(data: pd.DataFrame) -> None:
-    """Calculate derived atmospheric variables from ERA5 data."""
-    T_air = data['temperature_2m']
-    T_skin = data['skin_temperature']
-    
-    # Saturation vapor pressure using Magnus formula
-    es_air = 6.112 * np.exp(17.67 * T_air / (T_air + 243.5)) * 100  # Pa
-    es_skin = 6.112 * np.exp(17.67 * T_skin / (T_skin + 243.5)) * 100  # Pa
-    
-    data['saturation_vapor_pressure_air'] = es_air
-    data['saturation_vapor_pressure_skin'] = es_skin
-    
-    # Actual vapor pressure and concentration
-    RH = data['relative_humidity']
-    data['vapor_pressure_air'] = es_air * RH / 100.0
-    
-    # Vapor concentration (mol/cm³)
-    R = 8.3144  # J/mol/K
-    T_air_K = T_air + 273.15
-    data['vapor_concentration_air'] = data['vapor_pressure_air'] / (R * T_air_K) * 1e-6
-    data['vapor_pressure_deficit'] = es_air - data['vapor_pressure_air']
-
-def setup_era5_numpy_arrays(data: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, int]]:
-    """Convert ERA5 DataFrame to NumPy arrays for fast lookup."""
-    numeric_columns = [col for col in data.columns if col != 'datetime']
-    numpy_data = data[numeric_columns].to_numpy()
-    column_indices = {col: idx for idx, col in enumerate(numeric_columns)}
-    return numpy_data, column_indices
-
-def interpolate_era5_conditions(numpy_data: np.ndarray, column_indices: Dict[str, int], 
-                               time_index: float) -> Dict[str, float]:
-    """Fast interpolation of ERA5 conditions using NumPy arrays."""
-    if time_index >= numpy_data.shape[0] - 1:
-        # Use last data point
-        idx = numpy_data.shape[0] - 1
-        row = numpy_data[idx]
-        return {col: row[col_idx] for col, col_idx in column_indices.items()}
-    elif time_index <= 0:
-        # Use first data point
-        row = numpy_data[0]
-        return {col: row[col_idx] for col, col_idx in column_indices.items()}
-    else:
-        # Linear interpolation
-        idx_low = int(np.floor(time_index))
-        idx_high = idx_low + 1
-        weight_high = time_index - idx_low
-        weight_low = 1.0 - weight_high
-        
-        row_low = numpy_data[idx_low]
-        row_high = numpy_data[idx_high]
-        
-        conditions = {}
-        for col, col_idx in column_indices.items():
-            val_low = row_low[col_idx]
-            val_high = row_high[col_idx]
-            conditions[col] = weight_low * val_low + weight_high * val_high
-        
-        return conditions
-
-# ================================
-# ERA5 Atmospheric Forcing Classes
-# ================================
-
-class ERA5Forcing:
-    """
-    Handle ERA5 atmospheric forcing data for soil evaporation model.
-    
-    Provides time-interpolated atmospheric conditions including:
-    - Surface and air temperatures
-    - Relative humidity and vapor pressure  
-    - Atmospheric pressure
-    - Wind speed and solar radiation
-    
-    PERFORMANCE OPTIMIZATION: Uses class-level cache to prevent reloading same file.
-    """
-    
-    # Class-level cache to share data between instances
-    _cached_data = {}  # {file_path: (data, numpy_data, column_indices, metadata)}
-    
-    def __init__(self, era5_file_path: str):
-        """Initialize with ERA5 data file using class-level cache."""
-        self.era5_file_path = Path(era5_file_path)
-        
-        # Check class-level cache first
-        cache_key = str(self.era5_file_path.resolve())
-        if cache_key in ERA5Forcing._cached_data:
-            # Use cached data
-            cached = ERA5Forcing._cached_data[cache_key]
-            self.data = cached['data']
-            self._numpy_data = cached['numpy_data']
-            self._column_indices = cached['column_indices']
-            self.start_time = cached['start_time']
-            self.end_time = cached['end_time']
-            self.dt_hours = cached['dt_hours']
-            print(f"✓ ERA5 data loaded from cache ({self._numpy_data.shape})")
-        else:
-            # Initialize fresh
-            self.data = None
-            self.start_time = None
-            self.end_time = None
-            self.dt_hours = None
-            self._numpy_data = None
-            self._column_indices = None
-            self._load_era5_data()
-    
-    def _load_era5_data(self):
-        """Load and validate ERA5 data."""
-        if not self.era5_file_path.exists():
-            raise FileNotFoundError(f"ERA5 data file not found: {self.era5_file_path}")
-        
-        
-        # Load CSV data
-        self.data = pd.read_csv(self.era5_file_path)
-        
-        # Parse datetime column
-        self.data['datetime'] = pd.to_datetime(self.data['datetime'])
-        self.data = self.data.sort_values('datetime').reset_index(drop=True)
-        
-        # Extract time information
-        self.start_time = self.data['datetime'].iloc[0]
-        self.end_time = self.data['datetime'].iloc[-1]
-        
-        # Calculate time step (assume regular intervals)
-        if len(self.data) > 1:
-            self.dt_hours = (self.data['datetime'].iloc[1] - self.data['datetime'].iloc[0]).total_seconds() / 3600
-        else:
-            self.dt_hours = 1.0
-        
-        # Validate required columns
-        required_cols = ['temperature_2m', 'skin_temperature', 'relative_humidity', 'surface_pressure']
-        missing_cols = [col for col in required_cols if col not in self.data.columns]
-        if missing_cols:
-            raise ValueError(f"Missing required columns in ERA5 data: {missing_cols}")
-        
-        # Convert units and validate ranges
-        self._validate_and_convert_units()
-        
-    
-    def _validate_and_convert_units(self):
-        """Validate and convert ERA5 data units."""
-        validate_era5_data(self.data)
-        calculate_era5_derived_variables(self.data)
-        self._setup_numpy_arrays()
-    
-    
-    def _setup_numpy_arrays(self):
-        """Convert DataFrame to NumPy arrays for fast O(1) lookup."""
-        self._numpy_data, self._column_indices = setup_era5_numpy_arrays(self.data)
-        
-        print(f"✓ ERA5 data converted to NumPy arrays ({self._numpy_data.shape})")
-        
-        # Cache the processed data
-        cache_key = str(self.era5_file_path.resolve())
-        ERA5Forcing._cached_data[cache_key] = {
-            'data': self.data,
-            'numpy_data': self._numpy_data,
-            'column_indices': self._column_indices,
-            'start_time': self.start_time,
-            'end_time': self.end_time,
-            'dt_hours': self.dt_hours
-        }
-    
-    def get_conditions_at_time(self, simulation_days: float) -> Dict[str, float]:
-        """
-        Get atmospheric conditions at a specific simulation time using fast NumPy lookup.
-        
-        PERFORMANCE OPTIMIZATION: Replaced expensive pandas DataFrame operations
-        with fast NumPy array indexing.
-        
-        Args:
-            simulation_days: Time since simulation start in days
-            
-        Returns:
-            Dictionary of atmospheric conditions
-        """
-        # Convert simulation time to hours
-        hours_since_start = simulation_days * 24
-        
-        # Handle time wrapping (repeat data if simulation is longer)
-        total_hours = self._numpy_data.shape[0] * self.dt_hours
-        if hours_since_start > total_hours:
-            hours_since_start = hours_since_start % total_hours
-        
-        # Find interpolation indices and interpolate
-        time_index = hours_since_start / self.dt_hours
-        return interpolate_era5_conditions(self._numpy_data, self._column_indices, time_index)
-    
-    def get_summary_statistics(self) -> Dict[str, Dict[str, float]]:
-        """Get summary statistics of the ERA5 data."""
-        stats = {}
-        
-        key_vars = ['temperature_2m', 'skin_temperature', 'relative_humidity', 
-                   'surface_pressure', 'vapor_pressure_air', 'vapor_pressure_deficit']
-        
-        for var in key_vars:
-            if var in self.data.columns:
-                stats[var] = {
-                    'mean': self.data[var].mean(),
-                    'min': self.data[var].min(), 
-                    'max': self.data[var].max(),
-                    'std': self.data[var].std()
-                }
-        
-        return stats
-    
-    def get_time_range_days(self) -> float:
-        """Get the total time range of the data in days."""
-        return (self.end_time - self.start_time).total_seconds() / (24 * 3600)
-
-
-def load_default_era5_forcing() -> ERA5Forcing:
-    """Load the default ERA5 forcing data."""
-    default_path = Path(__file__).parent / "sample_era5_summer2023.csv"
-    
-    if not default_path.exists():
-        raise FileNotFoundError(f"Default ERA5 data file not found: {default_path}")
-    
-    return ERA5Forcing(default_path)
-
-
-def load_era5_forcing_from_config(config) -> ERA5Forcing:
-    """Load ERA5 forcing data based on configuration."""
-    
-    # Check if specific file is configured
-    if hasattr(config, 'temperature') and config.temperature.era5_data_file:
-        era5_file = config.temperature.era5_data_file
-        
-        # If directory is also specified, combine them
-        if config.temperature.era5_data_directory:
-            era5_path = Path(config.temperature.era5_data_directory) / era5_file
-        else:
-            # Try relative to script directory first
-            era5_path = Path(era5_file)
-            if not era5_path.exists():
-                # Try in ERA5_DATA directory
-                era5_path = Path(__file__).parent / "ERA5_DATA" / era5_file
-    
-    # Fallback to directory-based search
-    elif hasattr(config, 'temperature') and config.temperature.era5_data_directory:
-        era5_dir = Path(config.temperature.era5_data_directory)
-        
-        # Find the first CSV file in the directory
-        csv_files = list(era5_dir.glob("*.csv"))
-        if not csv_files:
-            raise FileNotFoundError(f"No CSV files found in ERA5 directory: {era5_dir}")
-        
-        era5_path = csv_files[0]  # Use first CSV file found
-    
-    # Ultimate fallback to default
-    else:
-        return load_default_era5_forcing()
-    
-    if not era5_path.exists():
-        raise FileNotFoundError(f"ERA5 data file not found: {era5_path}")
-    
-    return ERA5Forcing(era5_path)

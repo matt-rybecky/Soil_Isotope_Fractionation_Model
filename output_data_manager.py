@@ -275,6 +275,7 @@ class OutputDataManager:
             
             if "metadata" in data:
                 run_info["metadata"] = data["metadata"]
+                run_info["configuration"] = data.get("configuration", {})
                 run_info["config_summary"] = self._create_config_summary(data.get("configuration", {}))
                 run_info["_loaded"] = True
                 

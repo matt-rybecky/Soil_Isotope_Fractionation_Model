@@ -94,94 +94,41 @@ class SoilEvaporationApp:
                 run_options = []
                 self.run_lookup = {}
                 
+                # Load metadata for all runs and update the available_runs list
+                loaded_runs = []
                 for i, run_info in enumerate(available_runs, 1):  # Start numbering from 1
                     # Load metadata for display
-                    run_info = self.output_data_manager.load_run_metadata(run_info)
+                    loaded_run_info = self.output_data_manager.load_run_metadata(run_info)
+                    # Store the run number for plot legends
+                    loaded_run_info['run_number'] = i
+                    loaded_runs.append(loaded_run_info)
                     
-                    if run_info.get('metadata'):
-                        metadata = run_info['metadata']
-                        timestamp = metadata.get('timestamp', run_info['timestamp'])
+                    if loaded_run_info.get('metadata'):
+                        metadata = loaded_run_info['metadata']
+                        timestamp = metadata.get('timestamp', loaded_run_info['timestamp'])
                         run_type = metadata.get('run_type', 'unknown')
                         success = "✓" if metadata.get('success', True) else "✗"
-                        config_summary = run_info.get('config_summary', 'Unknown config')
+                        config_summary = loaded_run_info.get('config_summary', 'Unknown config')
                         
                         # Create numbered display format
                         display = f"#{i} {success} {config_summary} [{timestamp}]"
                     else:
-                        display = f"#{i} ? {run_info['timestamp']} | Error loading details"
+                        display = f"#{i} ? {loaded_run_info['timestamp']} | Error loading details"
                     
                     run_options.append(display)
-                    self.run_lookup[display] = run_info
-                    # Store the run number for plot legends
-                    run_info['run_number'] = i
+                    self.run_lookup[display] = loaded_run_info
                 
-                # Update listbox
-                self.runs_listbox.delete(0, tk.END)
-                for option in run_options:
-                    self.runs_listbox.insert(tk.END, option)
+                # Store available runs with loaded metadata for the dropdown
+                self.available_runs = loaded_runs
+                
             else:
-                self.runs_listbox.delete(0, tk.END)
-                self.runs_listbox.insert(tk.END, "No saved runs found")
+                self.available_runs = []
                 self.run_lookup = {}
                 
         except Exception as e:
             print(f"Error refreshing runs: {e}")
-            self.runs_listbox.delete(0, tk.END)
-            self.runs_listbox.insert(tk.END, "Error loading runs")
+            self.available_runs = []
             self.run_lookup = {}
-    
-    def on_runs_selected(self, event=None):
-        """Handle selection of runs from listbox."""
-        selected_indices = self.runs_listbox.curselection()
-        selected_runs = []
-        
-        for index in selected_indices:
-            run_display = self.runs_listbox.get(index)
-            if run_display in getattr(self, 'run_lookup', {}):
-                selected_runs.append(self.run_lookup[run_display])
-        
-        # Enable/disable plot button based on selection
-        if selected_runs:
-            self.create_plot_btn.config(state="normal")
-            # Store selected runs for plotting
-            self.selected_runs_data = selected_runs
-            
-            # Load first run for info display (maintains compatibility)
-            try:
-                first_run = selected_runs[0]
-                complete_data = self.output_data_manager.load_complete_run(first_run['filepath'])
-                
-                if complete_data['metadata']['success']:
-                    self.current_run_config = complete_data.get('configuration', {})
-                    self.current_run_metadata = complete_data.get('metadata', {})
-                    self._update_results_info()
-                    
-                    # Show multi-run ready message
-                    self.results_figure.clear()
-                    ax = self.results_figure.add_subplot(111)
-                    num_runs = len(selected_runs)
-                    run_text = "run" if num_runs == 1 else "runs"
-                    ax.text(0.5, 0.5, f'{num_runs} {run_text} selected\n\nSelect plot type and create visualization', 
-                            transform=ax.transAxes, ha='center', va='center', fontsize=12)
-                    ax.set_title(f'{num_runs} Model Run{"s" if num_runs > 1 else ""} Selected - Ready for Plotting')
-                    self._ensure_plot_canvas_created()
-                    if hasattr(self, 'plot_canvas') and self.plot_canvas:
-                        self.plot_canvas.draw()
-            except Exception as e:
-                print(f"Error loading run info: {e}")
-        else:
-            self.create_plot_btn.config(state="disabled")
-            self.selected_runs_data = []
-    
-    def _select_all_runs(self):
-        """Select all available runs."""
-        self.runs_listbox.selection_set(0, tk.END)
-        self.on_runs_selected()
-    
-    def _clear_run_selection(self):
-        """Clear all run selections."""
-        self.runs_listbox.selection_clear(0, tk.END)
-        self.on_runs_selected()
         
     
     def create_widgets(self):
@@ -287,6 +234,7 @@ class SoilEvaporationApp:
         """Handle environmental forcing toggle change."""
         self._update_environmental_forcing_visibility()
     
+    
     def _update_environmental_forcing_visibility(self):
         """Show/hide environmental forcing controls and reposition other sections."""
         if self.environmental_forcing_var.get():
@@ -344,15 +292,17 @@ class SoilEvaporationApp:
         ttk.Spinbox(frame, from_=0.001, to=10, increment=0.001, 
                    textvariable=self.surface_roughness_var, width=10, format="%.3f").grid(row=5, column=1, padx=(5, 0))
         
+        # Boundary condition type
+        
         # Temperature diffusion toggle (only for constant mode)
         self.disable_temp_diffusion_var = tk.BooleanVar(value=True)
         tk.Checkbutton(frame, text="Disable Temperature Diffusion (keep soil temp constant)", 
                       variable=self.disable_temp_diffusion_var,
-                      font=StandardStyles.BODY_FONT).grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+                      font=StandardStyles.BODY_FONT).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
         
         # Note about simplified physics
         tk.Label(frame, text="Note: Simplified physics mode for exploring basic evaporation", 
-                font=("Arial", 8), foreground="gray").grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+                font=("Arial", 8), foreground="gray").grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
     
     def _create_era5_file_selector(self, parent):
         """Create ERA5 file selection widgets."""
@@ -678,51 +628,76 @@ class SoilEvaporationApp:
         ttk.Label(num_frame, textvariable=self.progress_var, font=("Arial", 9)).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(10, 0))
     
     def create_results_tab(self):
-        """Create results visualization tab with reorganized layout."""
-        results_frame = ttk.Frame(self.notebook, padding="5")  # Reduced padding
+        """Create results visualization tab with three-column layout."""
+        results_frame = ttk.Frame(self.notebook, padding="5")
         self.notebook.add(results_frame, text="Results & Plots")
         
-        # Configure main results frame
-        results_frame.columnconfigure(0, weight=1)
-        results_frame.rowconfigure(3, weight=1)  # Main content area gets extra space
+        # Configure main results frame - make data selection wider
+        results_frame.columnconfigure(0, weight=2)  # Data Selection - wider
+        results_frame.columnconfigure(1, weight=1)  # Data Overlay - narrower
+        results_frame.columnconfigure(2, weight=1)  # Visualization - narrower
+        results_frame.rowconfigure(1, weight=1)  # Plot area gets extra space
         
-        # Top section: Data selection (row 0)
-        data_frame = ttk.LabelFrame(results_frame, text="Data Selection", padding="5")
-        data_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N), pady=(0, 3))
-        data_frame.columnconfigure(1, weight=1)
+        # Top section: Three columns (row 0)
+        # Column 1: Data Selection
+        data_frame = ttk.LabelFrame(results_frame, text="Data Selection", padding="3")
+        data_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N), padx=(0, 2), pady=(0, 5))
+        data_frame.columnconfigure(0, weight=1)
         
-        ttk.Label(data_frame, text="Select Runs:").grid(row=0, column=0, sticky=tk.NW)
+        # Model runs selection (dropdown style)
+        self.selected_runs_var = tk.StringVar(value="Select runs...")
         
-        # Create scrollable listbox for multiple run selection
-        runs_listbox_frame = ttk.Frame(data_frame)
-        runs_listbox_frame.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5)
-        runs_listbox_frame.columnconfigure(0, weight=1)
-        runs_listbox_frame.rowconfigure(0, weight=1)
+        # Get available model runs
+        self.available_runs = []
+        self.run_lookup = {}
+        self._refresh_available_runs()
         
-        self.runs_listbox = tk.Listbox(runs_listbox_frame, selectmode=tk.EXTENDED, height=3, 
-                                      exportselection=False)
-        self.runs_listbox.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        self.runs_listbox.bind('<<ListboxSelect>>', self.on_runs_selected)
+        self.runs_combo = ttk.Combobox(data_frame, textvariable=self.selected_runs_var,
+                                      values=["Select runs..."] + [self._format_run_display(run) for run in self.available_runs],
+                                      width=30, state="readonly")
+        self.runs_combo.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 3))
+        self.runs_combo.bind('<<ComboboxSelected>>', self._on_run_selected)
         
-        # Scrollbar for listbox
-        runs_scrollbar = ttk.Scrollbar(runs_listbox_frame, orient=tk.VERTICAL, command=self.runs_listbox.yview)
-        runs_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
-        self.runs_listbox.config(yscrollcommand=runs_scrollbar.set)
+        # Refresh button
+        ttk.Button(data_frame, text="Refresh", command=self._refresh_runs_dropdown).grid(row=1, column=0, sticky=tk.W, pady=(0, 3))
         
-        # Control buttons
-        controls_frame = ttk.Frame(data_frame)
-        controls_frame.grid(row=0, column=2, sticky=(tk.N, tk.W), padx=(5, 0))
+        # Selected runs display area (compact)
+        self.selected_runs_frame = ttk.Frame(data_frame)
+        self.selected_runs_frame.grid(row=2, column=0, sticky=(tk.W, tk.E))
+        self.selected_runs_frame.columnconfigure(0, weight=1)
         
-        ttk.Button(controls_frame, text="Refresh", command=self._refresh_available_runs).grid(row=0, column=0, sticky=tk.W)
-        ttk.Button(controls_frame, text="Select All", command=self._select_all_runs).grid(row=1, column=0, sticky=tk.W, pady=(2, 0))
-        ttk.Button(controls_frame, text="Clear", command=self._clear_run_selection).grid(row=2, column=0, sticky=tk.W, pady=(2, 0))
+        # Store selected runs data
+        self.selected_runs_data = []
+        self.selected_run_names = []
         
-        # Visualization controls section (row 1) 
-        plot_frame = ttk.LabelFrame(results_frame, text="Visualization Options", padding="5")
-        plot_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
-        plot_frame.columnconfigure(1, weight=1)
+        # Column 2: Data Overlay
+        overlay_frame = ttk.LabelFrame(results_frame, text="Data Overlay", padding="3")
+        overlay_frame.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N), padx=2, pady=(0, 5))
+        overlay_frame.columnconfigure(0, weight=1)
         
-        ttk.Label(plot_frame, text="Plot Type:").grid(row=0, column=0, sticky=tk.W)
+        # Data files selection (dropdown style)
+        self.selected_data_files_var = tk.StringVar(value="Select data files...")
+        self.available_data_files = self._get_available_data_files()
+        
+        self.data_files_combo = ttk.Combobox(overlay_frame, textvariable=self.selected_data_files_var,
+                                            values=["Select data files..."] + self.available_data_files,
+                                            width=30, state="readonly")
+        self.data_files_combo.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 3))
+        self.data_files_combo.bind('<<ComboboxSelected>>', self._on_data_file_selected)
+        
+        # Selected data files display area (compact)
+        self.selected_data_frame = ttk.Frame(overlay_frame)
+        self.selected_data_frame.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        self.selected_data_frame.columnconfigure(0, weight=1)
+        
+        # Store overlay data
+        self.overlay_data = []
+        self.selected_data_files = []
+        
+        # Column 3: Visualization Options
+        plot_frame = ttk.LabelFrame(results_frame, text="Visualization Options", padding="3")
+        plot_frame.grid(row=0, column=2, sticky=(tk.W, tk.E, tk.N), padx=(2, 0), pady=(0, 5))
+        plot_frame.columnconfigure(0, weight=1)
         
         self.plot_types = [
             "Depth Profiles (All Variables)", "Water Content vs Depth", "Temperature vs Depth",
@@ -734,27 +709,16 @@ class SoilEvaporationApp:
         
         self.plot_type_var = tk.StringVar(value=self.plot_types[0])
         self.plot_type_combo = ttk.Combobox(plot_frame, textvariable=self.plot_type_var,
-                                           values=self.plot_types, width=40, state="readonly")
-        self.plot_type_combo.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5)
+                                           values=self.plot_types, width=30, state="readonly")
+        self.plot_type_combo.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 3))
         
         self.create_plot_btn = ttk.Button(plot_frame, text="Create Plot", 
                                          command=self.create_selected_plot, state="disabled")
-        self.create_plot_btn.grid(row=0, column=2, padx=5)
+        self.create_plot_btn.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 3))
         
-        # Data overlay controls section (row 2)
-        self._create_data_overlay_section(results_frame)
-        
-        # Main content area (row 3) - uses a PanedWindow for resizable panes
-        content_paned = ttk.PanedWindow(results_frame, orient='horizontal')
-        content_paned.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(3, 0))
-        
-        # Left pane: Plot area
-        plot_area_frame = ttk.LabelFrame(content_paned, text="Visualization", padding="2")
-        content_paned.add(plot_area_frame, weight=2)  # 2/3 of space
-        
-        # Right pane: Results info panel  
-        info_frame = ttk.LabelFrame(content_paned, text="Results Information", padding="2")
-        content_paned.add(info_frame, weight=1)  # 1/3 of space
+        # Plot area (row 1) - spans all three columns
+        plot_area_frame = ttk.LabelFrame(results_frame, text="Visualization", padding="2")
+        plot_area_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(5, 0))
         
         # Setup plot canvas (lazy loading)
         self.plot_area_frame = plot_area_frame
@@ -766,105 +730,312 @@ class SoilEvaporationApp:
                                           font=('Arial', 12), foreground='gray')
         self.canvas_placeholder.grid(row=0, column=0, padx=20, pady=50)
         
-        # Results info text
-        info_text_frame = ttk.Frame(info_frame)
-        info_text_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        info_text_frame.columnconfigure(0, weight=1)
-        info_text_frame.rowconfigure(0, weight=1)
-        
-        self.results_info_text = tk.Text(info_text_frame, wrap=tk.WORD, height=25, width=35, 
-                                        font=('Consolas', 9), state='disabled')
-        info_scrollbar = ttk.Scrollbar(info_text_frame, orient="vertical", command=self.results_info_text.yview)
-        self.results_info_text.configure(yscrollcommand=info_scrollbar.set)
-        
-        self.results_info_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        info_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
-        
-        # Configure frame weights
+        # Configure plot area weights
         plot_area_frame.columnconfigure(0, weight=1)
         plot_area_frame.rowconfigure(0, weight=1)
-        info_frame.columnconfigure(0, weight=1)
-        info_frame.rowconfigure(0, weight=1)
         
         self._show_empty_plot()
     
-    def _create_data_overlay_section(self, parent):
-        """Create data overlay controls section."""
-        overlay_frame = ttk.LabelFrame(parent, text="Data Overlay", padding="5")
-        overlay_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=3)
-        overlay_frame.columnconfigure(2, weight=1)
-        
-        # Enable overlay toggle
-        self.enable_overlay_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(overlay_frame, text="Enable Data Overlay", 
-                      variable=self.enable_overlay_var,
-                      command=self._on_overlay_toggle,
-                      font=StandardStyles.BODY_FONT).grid(row=0, column=0, sticky=tk.W)
-        
-        # File selection button
-        self.browse_data_btn = ttk.Button(overlay_frame, text="Browse Data File...", 
-                                         command=self._browse_overlay_data, state="disabled")
-        self.browse_data_btn.grid(row=0, column=1, padx=(10, 5))
-        
-        # Selected file display
-        self.overlay_file_var = tk.StringVar(value="No file selected")
-        self.overlay_file_label = ttk.Label(overlay_frame, textvariable=self.overlay_file_var, 
-                                           foreground="gray", wraplength=300)
-        self.overlay_file_label.grid(row=0, column=2, sticky=(tk.W, tk.E), padx=(5, 0))
-        
-        # File format info
-        format_info = tk.Label(overlay_frame, 
-                              text="Expected format: CSV with columns [depth, water_content, d18O, D17O, temperature]", 
-                              font=("Arial", 8), foreground="gray")
-        format_info.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
-        
-        # Store overlay data
-        self.overlay_data = None
+    def _format_run_display(self, run_info):
+        """Format run info for display in dropdown with comprehensive metadata."""
+        try:
+            # Get run number (prominently displayed for legend matching)
+            run_number = run_info.get('run_number', '?')
+            
+            # Check if we have loaded configuration data
+            config = run_info.get('configuration', {})
+            if not config:
+                # Try to load complete data if configuration is missing
+                try:
+                    complete_data = self.output_data_manager.load_complete_run(run_info['filepath'])
+                    config = complete_data.get('configuration', {})
+                except:
+                    config = {}
+            
+            if config:
+                # Get simulation duration - try multiple locations
+                duration_days = config.get('simulation', {}).get('duration_days')
+                if duration_days is None:
+                    duration_days = config.get('numerical', {}).get('run_days', '?')
+                
+                # Get atmospheric properties
+                atm_config = config.get('atmospheric', {})
+                temp = atm_config.get('mean_air_temperature', '?')
+                humidity = atm_config.get('relative_humidity', '?')
+                
+                # Get forcing type
+                temp_config = config.get('temperature', {})
+                forcing_type = "ERA5" if temp_config.get('use_era5_forcing', False) else "Const"
+                
+                # Get soil properties
+                soil_config = config.get('soil', {})
+                porosity = soil_config.get('total_porosity', '?')
+                
+                # Get initial water content from water content profile
+                wc_profile = soil_config.get('water_content_profile', {})
+                if wc_profile.get('profile_type') == 'constant':
+                    water_content = wc_profile.get('constant_value', '?')
+                else:
+                    water_content = 'Var'  # Variable profile
+                
+                # Get numerical properties
+                num_config = config.get('numerical', {})
+                depth_step = num_config.get('depth_step', '?')
+                
+                # Calculate number of nodes from soil depth and depth step
+                soil_depth = soil_config.get('depth', '?')
+                if depth_step != '?' and soil_depth != '?':
+                    num_nodes = int(soil_depth / depth_step) + 1
+                else:
+                    num_nodes = '?'
+                
+                # Format atmospheric conditions
+                if temp != '?' and humidity != '?':
+                    atm_conditions = f"{temp}°C/{humidity}%RH"
+                else:
+                    atm_conditions = "Custom"
+                
+                # Format soil properties 
+                if porosity != '?' and water_content != '?':
+                    soil_props = f"φ={porosity}/θ={water_content}"
+                else:
+                    soil_props = "Custom"
+                
+                # Format grid info
+                if depth_step != '?' and num_nodes != '?':
+                    grid_info = f"dz={depth_step}cm/n={num_nodes}"
+                else:
+                    grid_info = "Custom"
+                
+                # Create comprehensive display string with Run # prominent
+                return f"Run #{run_number} | {duration_days}d | {forcing_type} | {atm_conditions} | {soil_props} | {grid_info}"
+            
+            # Fallback to original format
+            timestamp = run_info.get('timestamp', 'Unknown')
+            if len(timestamp) > 16:
+                timestamp = timestamp[:16]
+            return f"Run #{run_number} | {timestamp} | No config"
+            
+        except Exception as e:
+            print(f"Error formatting run display: {e}")
+            run_number = run_info.get('run_number', '?')
+            return f"Run #{run_number} | Error loading metadata"
     
-    def _on_overlay_toggle(self):
-        """Handle overlay enable/disable."""
-        if self.enable_overlay_var.get():
-            self.browse_data_btn.config(state="normal")
-            self.overlay_file_label.config(foreground=StandardStyles.PRIMARY_COLOR)
-        else:
-            self.browse_data_btn.config(state="disabled")
-            self.overlay_file_label.config(foreground="gray")
-            self.overlay_file_var.set("No file selected")
-            self.overlay_data = None
+    def _refresh_runs_dropdown(self):
+        """Refresh the runs dropdown with latest data."""
+        self._refresh_available_runs()
+        run_displays = [self._format_run_display(run) for run in self.available_runs]
+        self.runs_combo['values'] = ["Select model runs..."] + run_displays
+        self.runs_combo.set("Select model runs...")
     
-    def _browse_overlay_data(self):
-        """Browse for overlay data file."""
+    def _on_run_selected(self, event=None):
+        """Handle model run selection from dropdown."""
+        selected_display = self.runs_combo.get()
+        if selected_display == "Select model runs...":
+            return
+        
+        # Find the corresponding run info
+        for run_info in self.available_runs:
+            if self._format_run_display(run_info) == selected_display:
+                if run_info not in self.selected_runs_data:
+                    self.selected_runs_data.append(run_info)
+                    self.selected_run_names.append(selected_display)
+                    self._update_selected_runs_display()
+                    self._update_plot_button_state()
+                break
+        
+        # Reset combobox to default
+        self.runs_combo.set("Select model runs...")
+    
+    def _update_selected_runs_display(self):
+        """Update the display of selected model runs (compact)."""
+        # Clear existing display
+        for widget in self.selected_runs_frame.winfo_children():
+            widget.destroy()
+        
+        if not self.selected_runs_data:
+            return
+        
+        # Create header with count and clear button
+        header_frame = ttk.Frame(self.selected_runs_frame)
+        header_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 2))
+        header_frame.columnconfigure(0, weight=1)
+        
+        ttk.Label(header_frame, text=f"Selected ({len(self.selected_runs_data)}):", 
+                 font=('Arial', 8, 'bold')).grid(row=0, column=0, sticky=tk.W)
+        
+        button_frame = ttk.Frame(header_frame)
+        button_frame.grid(row=0, column=1, sticky=tk.E)
+        
+        ttk.Button(button_frame, text="All", width=4,
+                  command=self._select_all_runs).grid(row=0, column=0, sticky=tk.E, padx=(0, 2))
+        ttk.Button(button_frame, text="Clear", width=5,
+                  command=self._clear_run_selection).grid(row=0, column=1, sticky=tk.E)
+        
+        # Create compact list of selected runs
+        for i, (run_info, display_name) in enumerate(zip(self.selected_runs_data, self.selected_run_names)):
+            # Extract Run # and duration for compact display
+            parts = display_name.split(' | ')
+            if len(parts) >= 2:
+                run_number = parts[0]  # "Run #X"
+                duration = parts[1]    # "Xd"
+                compact_name = f"{run_number} ({duration})"
+            else:
+                # Fallback to first 20 characters
+                compact_name = display_name[:20] + "..." if len(display_name) > 20 else display_name
+            
+            run_frame = ttk.Frame(self.selected_runs_frame)
+            run_frame.grid(row=i+1, column=0, sticky=(tk.W, tk.E), pady=1)
+            run_frame.columnconfigure(0, weight=1)
+            
+            ttk.Label(run_frame, text=f"✓ {compact_name}",
+                     foreground="green", font=('Arial', 8)).grid(row=0, column=0, sticky=tk.W)
+            
+            # Compact remove button
+            remove_btn = ttk.Button(run_frame, text="×", width=3,
+                                   command=lambda idx=i: self._remove_run(idx))
+            remove_btn.grid(row=0, column=1, sticky=tk.E)
+    
+    def _remove_run(self, index):
+        """Remove a specific model run."""
+        if 0 <= index < len(self.selected_runs_data):
+            self.selected_runs_data.pop(index)
+            self.selected_run_names.pop(index)
+            self._update_selected_runs_display()
+            self._update_plot_button_state()
+    
+    def _select_all_runs(self):
+        """Select all available model runs."""
+        self.selected_runs_data = self.available_runs.copy()
+        self.selected_run_names = [self._format_run_display(run) for run in self.available_runs]
+        self._update_selected_runs_display()
+        self._update_plot_button_state()
+    
+    def _clear_run_selection(self):
+        """Clear all selected model runs."""
+        self.selected_runs_data.clear()
+        self.selected_run_names.clear()
+        self._update_selected_runs_display()
+        self._update_plot_button_state()
+    
+    def _update_plot_button_state(self):
+        """Update the state of the create plot button."""
+        if hasattr(self, 'create_plot_btn'):
+            if self.selected_runs_data:
+                self.create_plot_btn.config(state="normal")
+            else:
+                self.create_plot_btn.config(state="disabled")
+    
+    
+    def _get_available_data_files(self):
+        """Get list of available data files from PROFILE_DATA directory."""
+        import os
+        profile_data_dir = Path("PROFILE_DATA")
+        if not profile_data_dir.exists():
+            return []
+        
+        csv_files = []
+        for file in profile_data_dir.glob("*.csv"):
+            csv_files.append(file.name)
+        
+        return sorted(csv_files)
+    
+    def _on_data_file_selected(self, event=None):
+        """Handle data file selection from dropdown."""
+        selected_file = self.data_files_combo.get()
+        if selected_file == "Select data files..." or selected_file in self.selected_data_files:
+            return
+        
+        # Load and validate the data file
+        file_path = Path("PROFILE_DATA") / selected_file
+        if self._load_data_file(file_path, selected_file):
+            self.selected_data_files.append(selected_file)
+            self._update_selected_data_display()
+            
+        # Reset combobox to default
+        self.data_files_combo.set("Select data files...")
+    
+    def _load_data_file(self, file_path, filename):
+        """Load and validate a data file."""
         import pandas as pd
+        try:
+            data = pd.read_csv(file_path)
+            required_columns = ['depth', 'water_content', 'd18O', 'D17O', 'temperature']
+            
+            if not all(col in data.columns for col in required_columns):
+                missing = [col for col in required_columns if col not in data.columns]
+                messagebox.showerror("Invalid File", 
+                                   f"CSV file '{filename}' missing required columns: {missing}\n\n"
+                                   f"Required: {required_columns}")
+                return False
+            
+            # Store data with filename for identification
+            data_dict = {
+                'filename': filename,
+                'data': data[required_columns].copy()
+            }
+            self.overlay_data.append(data_dict)
+            return True
+            
+        except Exception as e:
+            messagebox.showerror("File Error", f"Error loading '{filename}':\n{str(e)}")
+            return False
+    
+    def _update_selected_data_display(self):
+        """Update the display of selected data files (compact)."""
+        # Clear existing display
+        for widget in self.selected_data_frame.winfo_children():
+            widget.destroy()
         
-        file_path = filedialog.askopenfilename(
-            title="Select Data Overlay CSV File",
-            filetypes=[
-                ("CSV files", "*.csv"),
-                ("All files", "*.*")
-            ]
-        )
+        if not self.selected_data_files:
+            return
         
-        if file_path:
-            try:
-                # Load and validate data
-                data = pd.read_csv(file_path)
-                required_columns = ['depth', 'water_content', 'd18O', 'D17O', 'temperature']
-                
-                if not all(col in data.columns for col in required_columns):
-                    missing = [col for col in required_columns if col not in data.columns]
-                    messagebox.showerror("Invalid File", 
-                                       f"CSV file missing required columns: {missing}\n\n"
-                                       f"Required: {required_columns}")
-                    return
-                
-                # Store overlay data
-                self.overlay_data = data[required_columns].copy()
-                filename = Path(file_path).name
-                self.overlay_file_var.set(f"✓ {filename} ({len(data)} points)")
-                self.overlay_file_label.config(foreground="green")
-                
-            except Exception as e:
-                messagebox.showerror("File Error", f"Failed to load file: {str(e)}")
+        # Create header with count and clear button
+        header_frame = ttk.Frame(self.selected_data_frame)
+        header_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 2))
+        header_frame.columnconfigure(0, weight=1)
+        
+        ttk.Label(header_frame, text=f"Selected ({len(self.selected_data_files)}):", 
+                 font=('Arial', 8, 'bold')).grid(row=0, column=0, sticky=tk.W)
+        
+        ttk.Button(header_frame, text="Clear", width=5,
+                  command=self._clear_all_data_files).grid(row=0, column=1, sticky=tk.E)
+        
+        # Create compact list of selected files
+        for i, filename in enumerate(self.selected_data_files):
+            file_frame = ttk.Frame(self.selected_data_frame)
+            file_frame.grid(row=i+1, column=0, sticky=(tk.W, tk.E), pady=1)
+            file_frame.columnconfigure(0, weight=1)
+            
+            # Get point count for this file
+            data_points = len(self.overlay_data[i]['data'])
+            
+            # Compact filename (remove .csv extension)
+            display_name = filename.replace('.csv', '')
+            if len(display_name) > 15:
+                display_name = display_name[:12] + "..."
+            
+            ttk.Label(file_frame, text=f"✓ {display_name} ({data_points})",
+                     foreground="blue", font=('Arial', 8)).grid(row=0, column=0, sticky=tk.W)
+            
+            # Compact remove button
+            remove_btn = ttk.Button(file_frame, text="×", width=3,
+                                   command=lambda idx=i: self._remove_data_file(idx))
+            remove_btn.grid(row=0, column=1, sticky=tk.E)
+    
+    def _remove_data_file(self, index):
+        """Remove a specific data file."""
+        if 0 <= index < len(self.selected_data_files):
+            self.selected_data_files.pop(index)
+            self.overlay_data.pop(index)
+            self._update_selected_data_display()
+    
+    def _clear_all_data_files(self):
+        """Clear all selected data files."""
+        self.selected_data_files.clear()
+        self.overlay_data.clear()
+        self._update_selected_data_display()
+    
     
     def _ensure_plot_canvas_created(self):
         """Create plot canvas if needed."""
@@ -1123,10 +1294,8 @@ class SoilEvaporationApp:
                 self._show_no_data_message(plot_type)
                 return
             
-            # Get overlay data if enabled
-            overlay_data = None
-            if getattr(self, 'enable_overlay_var', None) and self.enable_overlay_var.get():
-                overlay_data = getattr(self, 'overlay_data', None)
+            # Get overlay data if any selected
+            overlay_data = getattr(self, 'overlay_data', [])
             
             # Create multi-run plot with optional overlay
             self._create_multi_run_plot(plot_type, selected_runs, overlay_data)
